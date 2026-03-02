@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 chrono = { version = "0.4", features = ["clock"] }
-indicatif = "0.17"
+indicatif = "0.18"
 tokio = { version = "1.49.0", features = ["rt", "macros", "time"] }
 
 [profile.release]
