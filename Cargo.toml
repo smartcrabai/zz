@@ -3,7 +3,7 @@ description = "A CLI timer tool that waits until a specified time with a progres
 edition = "2024"
 license = "Apache-2.0"
 name = "zzsleep"
-repository = "https://github.com/takumi3488/zz"
+repository = "https://github.com/smartcrabai/zz"
 version = "0.0.7"
 
 [[bin]]

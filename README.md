@@ -7,25 +7,25 @@ A CLI sleep/timer utility that waits until a specified duration or time. Install
 ### Homebrew (macOS / Linux)
 
 ```sh
-brew install takumi3488/tap/zzsleep
+brew install smartcrabai/tap/zzsleep
 ```
 
 ### Shell script (macOS / Linux)
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/takumi3488/zz/releases/latest/download/zzsleep-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/smartcrabai/zz/releases/latest/download/zzsleep-installer.sh | sh
 ```
 
 ### PowerShell (Windows)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/takumi3488/zz/releases/latest/download/zzsleep-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/smartcrabai/zz/releases/latest/download/zzsleep-installer.ps1 | iex"
 ```
 
 ### Build from source
 
 ```sh
-cargo install --git https://github.com/takumi3488/zz
+cargo install --git https://github.com/smartcrabai/zz
 ```
 
 This installs the binary as `zz`.
