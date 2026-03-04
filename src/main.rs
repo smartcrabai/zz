@@ -4,6 +4,10 @@ use zzsleep::{parse_end_time, sleep_until, split_args};
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if raw_args.iter().any(|a| a == "-v" || a == "--version") {
+        println!("zz {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let (quiet, time_args) = split_args(&raw_args);
 
     if time_args.is_empty() {
