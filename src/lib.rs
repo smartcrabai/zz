@@ -361,7 +361,11 @@ mod tests {
         Local
             .with_ymd_and_hms(year, month, day, h, m, s)
             .single()
-            .unwrap_or_else(|| panic!("test datetime {year}-{month:02}-{day:02} {h:02}:{m:02}:{s:02} must be valid"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "test datetime {year}-{month:02}-{day:02} {h:02}:{m:02}:{s:02} must be valid"
+                )
+            })
     }
 
     #[test]
