@@ -25,3 +25,10 @@ formula = "zz"
 
 [profile.dist]
 inherits = "release"
+
+[lints.clippy]
+allow_attributes = "deny"
+dbg_macro = "deny"
+expect_used = "deny"
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"

@@ -33,7 +33,7 @@ async fn main() {
     let end_time = match parse_end_time(&time_args, now) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("error: {}", e);
+            eprintln!("error: {e}");
             std::process::exit(1);
         }
     };
