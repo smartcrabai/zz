@@ -2,6 +2,11 @@ use chrono::{DateTime, Datelike, Duration, Local, NaiveTime, TimeZone};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration as StdDuration;
 
+/// Parses end time from command-line arguments.
+///
+/// # Errors
+///
+/// Returns an error if the arguments cannot be parsed as a valid time specification.
 pub fn parse_end_time(args: &[String], now: DateTime<Local>) -> Result<DateTime<Local>, String> {
     if args.is_empty() {
         return Err("no arguments provided".to_string());
@@ -11,7 +16,7 @@ pub fn parse_end_time(args: &[String], now: DateTime<Local>) -> Result<DateTime<
     if args.len() == 1
         && let Ok(secs) = args[0].parse::<u64>()
     {
-        return Ok(now + Duration::seconds(secs as i64));
+        return Ok(now + Duration::seconds(secs.cast_signed()));
     }
 
     // 2. One or more tokens with h/m/s suffixes -> sum durations
@@ -20,28 +25,25 @@ pub fn parse_end_time(args: &[String], now: DateTime<Local>) -> Result<DateTime<
         let mut all_matched = true;
         for token in args {
             if let Some(val) = token.strip_suffix('h') {
-                match val.parse::<i64>() {
-                    Ok(n) => total_secs += n * 3600,
-                    Err(_) => {
-                        all_matched = false;
-                        break;
-                    }
+                if let Ok(n) = val.parse::<i64>() {
+                    total_secs += n * 3600;
+                } else {
+                    all_matched = false;
+                    break;
                 }
             } else if let Some(val) = token.strip_suffix('m') {
-                match val.parse::<i64>() {
-                    Ok(n) => total_secs += n * 60,
-                    Err(_) => {
-                        all_matched = false;
-                        break;
-                    }
+                if let Ok(n) = val.parse::<i64>() {
+                    total_secs += n * 60;
+                } else {
+                    all_matched = false;
+                    break;
                 }
             } else if let Some(val) = token.strip_suffix('s') {
-                match val.parse::<i64>() {
-                    Ok(n) => total_secs += n,
-                    Err(_) => {
-                        all_matched = false;
-                        break;
-                    }
+                if let Ok(n) = val.parse::<i64>() {
+                    total_secs += n;
+                } else {
+                    all_matched = false;
+                    break;
                 }
             } else {
                 all_matched = false;
@@ -55,7 +57,7 @@ pub fn parse_end_time(args: &[String], now: DateTime<Local>) -> Result<DateTime<
 
     // All remaining formats expect exactly one argument
     if args.len() != 1 {
-        return Err(format!("could not parse arguments: {:?}", args));
+        return Err(format!("could not parse arguments: {args:?}"));
     }
     let s = &args[0];
 
@@ -101,9 +103,10 @@ pub fn parse_end_time(args: &[String], now: DateTime<Local>) -> Result<DateTime<
         }
     }
 
-    Err(format!("could not parse argument: {}", s))
+    Err(format!("could not parse argument: {s}"))
 }
 
+#[must_use]
 pub fn format_eta(end: &DateTime<Local>, now: &DateTime<Local>) -> String {
     let end_date = end.date_naive();
     let now_date = now.date_naive();
@@ -120,22 +123,21 @@ pub fn format_eta(end: &DateTime<Local>, now: &DateTime<Local>) -> String {
 pub async fn sleep_until_with_progress(end_time: DateTime<Local>) {
     let start_time = Local::now();
     let total_ms = (end_time - start_time).num_milliseconds().max(1000);
-    let total_secs = (total_ms as u64).div_ceil(1000); // ceil
+    let total_secs = u64::try_from(total_ms).unwrap_or(1000).div_ceil(1000);
 
     let pb = ProgressBar::new(total_secs);
     pb.set_style(
         ProgressStyle::with_template("⠿ [{bar:40.cyan/blue}] {msg}")
-            .unwrap()
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
             .progress_chars("█░"),
     );
 
     let eta_str = format_eta(&end_time, &Local::now());
     pb.set_message(format!(
-        "{:02}:{:02}:{:02} | ETA {}",
+        "{:02}:{:02}:{:02} | ETA {eta_str}",
         total_secs / 3600,
         (total_secs % 3600) / 60,
         total_secs % 60,
-        eta_str
     ));
 
     let mut last_elapsed_secs: u64 = u64::MAX;
@@ -146,20 +148,20 @@ pub async fn sleep_until_with_progress(end_time: DateTime<Local>) {
         if remaining <= 0 {
             break;
         }
-        let elapsed_secs = (Local::now() - start_time).num_seconds().max(0) as u64;
+        let elapsed_secs =
+            u64::try_from((Local::now() - start_time).num_seconds().max(0)).unwrap_or(0);
         if elapsed_secs == last_elapsed_secs {
             continue;
         }
         last_elapsed_secs = elapsed_secs;
         pb.set_position(elapsed_secs.min(total_secs));
-        let remaining_secs = (remaining as f64 / 1000.0).ceil() as i64;
+        let remaining_secs = (remaining + 999) / 1000;
         let eta_str = format_eta(&end_time, &Local::now());
         pb.set_message(format!(
-            "{:02}:{:02}:{:02} | ETA {}",
+            "{:02}:{:02}:{:02} | ETA {eta_str}",
             remaining_secs / 3600,
             (remaining_secs % 3600) / 60,
             remaining_secs % 60,
-            eta_str
         ));
     }
     pb.finish();
@@ -168,7 +170,10 @@ pub async fn sleep_until_with_progress(end_time: DateTime<Local>) {
 async fn sleep_until_without_progress(end_time: DateTime<Local>) {
     let remaining = (end_time - Local::now()).num_milliseconds();
     if remaining > 0 {
-        tokio::time::sleep(StdDuration::from_millis(remaining as u64)).await;
+        tokio::time::sleep(StdDuration::from_millis(
+            u64::try_from(remaining).unwrap_or(0),
+        ))
+        .await;
     }
 }
 
@@ -180,6 +185,7 @@ pub async fn sleep_until(end_time: DateTime<Local>, quiet: bool) {
     }
 }
 
+#[must_use]
 pub fn split_args(raw: &[String]) -> (bool, Vec<String>) {
     let quiet = raw.iter().any(|a| a == "-q" || a == "--quiet");
     let time_args = raw
@@ -196,122 +202,139 @@ mod tests {
     use chrono::{Local, TimeZone};
 
     fn args(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| s.to_string()).collect()
+        v.iter().map(|s| (*s).to_string()).collect()
     }
 
     fn now_fixed() -> DateTime<Local> {
         // Fixed reference: 2026-02-20 10:00:00 local time
-        Local.with_ymd_and_hms(2026, 2, 20, 10, 0, 0).unwrap()
+        Local
+            .with_ymd_and_hms(2026, 2, 20, 10, 0, 0)
+            .single()
+            .unwrap_or_else(|| panic!("fixed test time 2026-02-20 10:00:00 must be valid"))
     }
 
     #[test]
-    fn test_seconds_only() {
+    fn test_seconds_only() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["10"]), now).unwrap();
+        let end = parse_end_time(&args(&["10"]), now)?;
         assert_eq!((end - now).num_seconds(), 10);
+        Ok(())
     }
 
     #[test]
-    fn test_zero_seconds() {
+    fn test_zero_seconds() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["0"]), now).unwrap();
+        let end = parse_end_time(&args(&["0"]), now)?;
         assert_eq!((end - now).num_seconds(), 0);
+        Ok(())
     }
 
     #[test]
-    fn test_hours() {
+    fn test_hours() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["2h"]), now).unwrap();
+        let end = parse_end_time(&args(&["2h"]), now)?;
         assert_eq!((end - now).num_seconds(), 7200);
+        Ok(())
     }
 
     #[test]
-    fn test_minutes() {
+    fn test_minutes() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["5m"]), now).unwrap();
+        let end = parse_end_time(&args(&["5m"]), now)?;
         assert_eq!((end - now).num_seconds(), 300);
+        Ok(())
     }
 
     #[test]
-    fn test_seconds_unit() {
+    fn test_seconds_unit() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["30s"]), now).unwrap();
+        let end = parse_end_time(&args(&["30s"]), now)?;
         assert_eq!((end - now).num_seconds(), 30);
+        Ok(())
     }
 
     #[test]
-    fn test_hours_minutes() {
+    fn test_hours_minutes() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["2h", "5m"]), now).unwrap();
+        let end = parse_end_time(&args(&["2h", "5m"]), now)?;
         assert_eq!((end - now).num_seconds(), 7500);
+        Ok(())
     }
 
     #[test]
-    fn test_minutes_seconds() {
+    fn test_minutes_seconds() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["5m", "30s"]), now).unwrap();
+        let end = parse_end_time(&args(&["5m", "30s"]), now)?;
         assert_eq!((end - now).num_seconds(), 330);
+        Ok(())
     }
 
     #[test]
-    fn test_hours_minutes_seconds() {
+    fn test_hours_minutes_seconds() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["1h", "30m", "45s"]), now).unwrap();
+        let end = parse_end_time(&args(&["1h", "30m", "45s"]), now)?;
         assert_eq!((end - now).num_seconds(), 5445);
+        Ok(())
     }
 
     #[test]
-    fn test_hhmm_future() {
+    fn test_hhmm_future() -> Result<(), String> {
         // now = 10:00:00, target = 12:30 -> same day
         let now = now_fixed();
-        let end = parse_end_time(&args(&["12:30"]), now).unwrap();
+        let end = parse_end_time(&args(&["12:30"]), now)?;
         assert_eq!(end.date_naive(), now.date_naive());
         assert_eq!(end.format("%H:%M:%S").to_string(), "12:30:00");
+        Ok(())
     }
 
     #[test]
-    fn test_hhmm_past() {
+    fn test_hhmm_past() -> Result<(), String> {
         // now = 10:00:00, target = 08:00 -> next day
         let now = now_fixed();
-        let end = parse_end_time(&args(&["08:00"]), now).unwrap();
+        let end = parse_end_time(&args(&["08:00"]), now)?;
         let expected_date = now.date_naive() + Duration::days(1);
         assert_eq!(end.date_naive(), expected_date);
         assert_eq!(end.format("%H:%M:%S").to_string(), "08:00:00");
+        Ok(())
     }
 
     #[test]
-    fn test_hhmmss_future() {
+    fn test_hhmmss_future() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["12:30:45"]), now).unwrap();
+        let end = parse_end_time(&args(&["12:30:45"]), now)?;
         assert_eq!(end.date_naive(), now.date_naive());
         assert_eq!(end.format("%H:%M:%S").to_string(), "12:30:45");
+        Ok(())
     }
 
     #[test]
-    fn test_hhmmss_past() {
+    fn test_hhmmss_past() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["08:00:00"]), now).unwrap();
+        let end = parse_end_time(&args(&["08:00:00"]), now)?;
         let expected_date = now.date_naive() + Duration::days(1);
         assert_eq!(end.date_naive(), expected_date);
+        Ok(())
     }
 
     #[test]
-    fn test_iso8601_with_tz() {
+    fn test_iso8601_with_tz() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["20260220T123000+0900"]), now).unwrap();
+        let end = parse_end_time(&args(&["20260220T123000+0900"]), now)?;
         // UTC+9 12:30:00 -> UTC 03:30:00
         let utc = end.with_timezone(&chrono::Utc);
         assert_eq!(utc.format("%H:%M:%S").to_string(), "03:30:00");
         assert_eq!(utc.format("%Y-%m-%d").to_string(), "2026-02-20");
+        Ok(())
     }
 
     #[test]
-    fn test_iso8601_utc() {
+    fn test_iso8601_utc() -> Result<(), String> {
         let now = now_fixed();
-        let end = parse_end_time(&args(&["20260220T123000Z"]), now).unwrap();
+        let end = parse_end_time(&args(&["20260220T123000Z"]), now)?;
         let utc = end.with_timezone(&chrono::Utc);
         assert_eq!(utc.format("%H:%M:%S").to_string(), "12:30:00");
         assert_eq!(utc.format("%Y-%m-%d").to_string(), "2026-02-20");
+        Ok(())
     }
 
     #[test]
@@ -335,7 +358,14 @@ mod tests {
     // format_eta tests
 
     fn make_dt(year: i32, month: u32, day: u32, h: u32, m: u32, s: u32) -> DateTime<Local> {
-        Local.with_ymd_and_hms(year, month, day, h, m, s).unwrap()
+        Local
+            .with_ymd_and_hms(year, month, day, h, m, s)
+            .single()
+            .unwrap_or_else(|| {
+                panic!(
+                    "test datetime {year}-{month:02}-{day:02} {h:02}:{m:02}:{s:02} must be valid"
+                )
+            })
     }
 
     #[test]
