@@ -4,7 +4,7 @@ edition = "2024"
 license = "Apache-2.0"
 name = "zzsleep"
 repository = "https://github.com/smartcrabai/zz"
-version = "0.0.8"
+version = "0.0.9"
 
 [[bin]]
 name = "zz"
