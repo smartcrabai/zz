@@ -120,26 +120,24 @@ pub fn format_eta(end: &DateTime<Local>, now: &DateTime<Local>) -> String {
     }
 }
 
-pub async fn sleep_until_with_progress(end_time: DateTime<Local>) {
+/// How a wait ended: the timer ran to completion, or Ctrl+C interrupted it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SleepOutcome {
+    Completed,
+    Interrupted,
+}
+
+/// Resolves when Ctrl+C (SIGINT) is received. If the signal listener cannot
+/// be installed, waits forever so the timer branch wins and the OS default
+/// disposition (terminate on SIGINT) still applies.
+async fn wait_for_ctrl_c() {
+    if tokio::signal::ctrl_c().await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
+async fn run_progress_loop(pb: &ProgressBar, end_time: DateTime<Local>, total_secs: u64) {
     let start_time = Local::now();
-    let total_ms = (end_time - start_time).num_milliseconds().max(1000);
-    let total_secs = u64::try_from(total_ms).unwrap_or(1000).div_ceil(1000);
-
-    let pb = ProgressBar::new(total_secs);
-    pb.set_style(
-        ProgressStyle::with_template("⠿ [{bar:40.cyan/blue}] {msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_bar())
-            .progress_chars("█░"),
-    );
-
-    let eta_str = format_eta(&end_time, &Local::now());
-    pb.set_message(format!(
-        "{:02}:{:02}:{:02} | ETA {eta_str}",
-        total_secs / 3600,
-        (total_secs % 3600) / 60,
-        total_secs % 60,
-    ));
-
     let mut last_elapsed_secs: u64 = u64::MAX;
     let mut interval = tokio::time::interval(StdDuration::from_millis(50));
     loop {
@@ -164,7 +162,36 @@ pub async fn sleep_until_with_progress(end_time: DateTime<Local>) {
             remaining_secs % 60,
         ));
     }
-    pb.finish();
+}
+
+pub async fn sleep_until_with_progress(end_time: DateTime<Local>) -> SleepOutcome {
+    let total_ms = (end_time - Local::now()).num_milliseconds().max(1000);
+    let total_secs = u64::try_from(total_ms).unwrap_or(1000).div_ceil(1000);
+
+    let pb = ProgressBar::new(total_secs);
+    pb.set_style(
+        ProgressStyle::with_template("⠿ [{bar:40.cyan/blue}] {msg}")
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .progress_chars("█░"),
+    );
+
+    let eta_str = format_eta(&end_time, &Local::now());
+    pb.set_message(format!(
+        "{:02}:{:02}:{:02} | ETA {eta_str}",
+        total_secs / 3600,
+        (total_secs % 3600) / 60,
+        total_secs % 60,
+    ));
+
+    let outcome = tokio::select! {
+        () = run_progress_loop(&pb, end_time, total_secs) => SleepOutcome::Completed,
+        () = wait_for_ctrl_c() => SleepOutcome::Interrupted,
+    };
+    match outcome {
+        SleepOutcome::Completed => pb.finish(),
+        SleepOutcome::Interrupted => pb.abandon(),
+    }
+    outcome
 }
 
 async fn sleep_until_without_progress(end_time: DateTime<Local>) {
@@ -177,11 +204,14 @@ async fn sleep_until_without_progress(end_time: DateTime<Local>) {
     }
 }
 
-pub async fn sleep_until(end_time: DateTime<Local>, quiet: bool) {
+pub async fn sleep_until(end_time: DateTime<Local>, quiet: bool) -> SleepOutcome {
     if quiet {
-        sleep_until_without_progress(end_time).await;
+        tokio::select! {
+            () = sleep_until_without_progress(end_time) => SleepOutcome::Completed,
+            () = wait_for_ctrl_c() => SleepOutcome::Interrupted,
+        }
     } else {
-        sleep_until_with_progress(end_time).await;
+        sleep_until_with_progress(end_time).await
     }
 }
 
@@ -446,5 +476,11 @@ mod tests {
         let start = std::time::Instant::now();
         sleep_until_without_progress(future).await;
         assert!(start.elapsed() < std::time::Duration::from_millis(500));
+    }
+
+    #[tokio::test]
+    async fn test_sleep_until_quiet_completes() {
+        let past = Local::now() - Duration::seconds(1);
+        assert_eq!(sleep_until(past, true).await, SleepOutcome::Completed);
     }
 }
