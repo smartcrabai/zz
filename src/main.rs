@@ -1,5 +1,5 @@
 use chrono::Local;
-use zzsleep::{parse_end_time, sleep_until, split_args};
+use zzsleep::{SleepOutcome, parse_end_time, sleep_until, split_args};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -38,5 +38,8 @@ async fn main() {
         }
     };
 
-    sleep_until(end_time, quiet).await;
+    if sleep_until(end_time, quiet).await == SleepOutcome::Interrupted {
+        // 128 + SIGINT(2): the conventional exit code for Ctrl+C
+        std::process::exit(130);
+    }
 }
