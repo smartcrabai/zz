@@ -170,9 +170,9 @@ pub async fn sleep_until_with_progress(end_time: DateTime<Local>) -> SleepOutcom
 
     let pb = ProgressBar::new(total_secs);
     pb.set_style(
-        ProgressStyle::with_template("⠿ [{bar:40.cyan/blue}] {msg}")
+        ProgressStyle::with_template("* [{bar:40.cyan/blue}] {msg}")
             .unwrap_or_else(|_| ProgressStyle::default_bar())
-            .progress_chars("█░"),
+            .progress_chars("#-"),
     );
 
     let eta_str = format_eta(&end_time, &Local::now());
