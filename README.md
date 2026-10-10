@@ -68,3 +68,8 @@ zz -q 5m          # wait 5 minutes, no progress bar
 zz 12:30 --quiet  # wait until 12:30, no progress bar
 zz -q 10 && echo "done"   # use in scripts without visual noise
 ```
+
+## Support
+
+If you find zzsleep useful, consider [sponsoring smartcrabai](https://github.com/sponsors/smartcrabai)
+to support its development and maintenance.
